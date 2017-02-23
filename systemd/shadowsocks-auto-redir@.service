@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/shadowsocks-auto-redir/shadowsocks-auto-redir /etc/shadowsocks/%i.json
+ExecStart=/opt/shadowsocks-auto-redir/shadowsocks-auto-redir /etc/shadowsocks-libev/%i.json
 KillSignal=SIGINT
 CapabilityBoundingSet=~CAP_SYS_ADMIN
 

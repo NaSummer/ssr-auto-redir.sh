@@ -1,32 +1,24 @@
 #!/bin/bash
 echoerr() { echo "$@" 1>&2; }
-do_iptables() {
-    if [ "$DEBUG" == "1" ]; then
-        echo "iptables $@"
-    else
-        iptables $@
-    fi
-}
-do_ipset() {
-    if [ "$DEBUG" == "1" ]; then
-        echo "ipset $@"
-    else
-        ipset $@
-    fi
-}
-do_ss_redir() {
-    if [ "$DEBUG" == "1" ]; then
-        echo "ss-redir $@"
-    else
-        ss-redir $@
-    fi
-}
 clear_rules() {
     echo "Clearing rules"
-    do_iptables -t nat -D OUTPUT -p tcp -j SHADOWSOCKS
-    do_iptables -t nat -F SHADOWSOCKS
-    do_iptables -t nat -X SHADOWSOCKS
-    do_ipset destroy shadowsocks
+    iptables -t nat -D OUTPUT -p tcp -j SHADOWSOCKS
+    iptables -t nat -F SHADOWSOCKS
+    iptables -t nat -X SHADOWSOCKS
+    ipset destroy shadowsocks
+    if [[ `jq -r ".ss_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
+        echo "Clearing udp rules"
+        ip route del local default dev lo table 100
+        ip rule del fwmark 1 lookup 100
+        iptables -t mangle -D  OUTPUT -j SHADOWSOCKS_MARK
+        iptables -t mangle -D PREROUTING -j SHADOWSOCKS
+
+        iptables -t mangle -F SHADOWSOCKS
+        iptables -t mangle -X SHADOWSOCKS
+
+        iptables -t mangle -F SHADOWSOCKS_MARK
+        iptables -t mangle -X SHADOWSOCKS_MARK
+    fi
 }
 find_script_path() {
     SCRIPT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -45,15 +37,15 @@ CONFIG_PATH="$1"
 if [ "$CONFIG_PATH" == "" ]; then
     echoerr "Usage: shadowsocks-auto-redir <path to config.json>"
     exit 1
-elif [ "$CONFIG_PATH" == "clear" ]; then
+elif [ "$CONFIG_PATH" == "/etc/shadowsocks-libev/clear.json" ]; then
     clear_rules
     exit 0
 elif [ ! -f "$CONFIG_PATH" ]; then
     echoerr "$CONFIG_PATH does not exist"
     exit 1
-fi
+fi  
 
-do_iptables -t nat -N SHADOWSOCKS
+iptables -t nat -N SHADOWSOCKS
 
 # Bypass ips
 SERVER=`jq -r ".server" $CONFIG_PATH`
@@ -61,7 +53,7 @@ SERVER=`jq -r ".server" $CONFIG_PATH`
 if [[ $SERVER =~ "127."* ]]; then
     echo "Skipping local address $SERVER"
 else
-    do_iptables -t nat -A SHADOWSOCKS -d $SERVER -j RETURN
+    iptables -t nat -A SHADOWSOCKS -d $SERVER -j RETURN
 fi
 
 BYPASS_IPS=`jq -r ".ss_redir_options.bypass_ips" $CONFIG_PATH`
@@ -70,39 +62,38 @@ if [[ "$BYPASS_IPS" != "null" ]]; then
     # Should only iterate when the item is not null
     BYPASS_IPS=`jq -r ".ss_redir_options.bypass_ips[]" $CONFIG_PATH`
     for ip in $BYPASS_IPS; do
-        do_iptables -t nat -A SHADOWSOCKS -d $ip -j RETURN
+        iptables -t nat -A SHADOWSOCKS -d $ip -j RETURN
     done
 fi
 
 # Allow connection to preserved networks
-do_iptables -t nat -A SHADOWSOCKS -d 0.0.0.0/8 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 10.0.0.0/8 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 127.0.0.0/8 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 169.254.0.0/16 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 172.16.0.0/12 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 192.168.0.0/16 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 224.0.0.0/4 -j RETURN
-do_iptables -t nat -A SHADOWSOCKS -d 240.0.0.0/4 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 0.0.0.0/8 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 10.0.0.0/8 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 127.0.0.0/8 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 169.254.0.0/16 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 172.16.0.0/12 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 192.168.0.0/16 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 224.0.0.0/4 -j RETURN
+iptables -t nat -A SHADOWSOCKS -d 240.0.0.0/4 -j RETURN
 
 # Load bypass route set
-do_ipset -N shadowsocks hash:net maxelem 65536
+ipset -N shadowsocks hash:net maxelem 65536
 
 BYPASS_PRESET=`jq -r ".ss_redir_options.bypass_preset" $CONFIG_PATH`
 
 if [[ "$BYPASS_PRESET" == "chnroute" ]]; then
     for ip in `cat $SCRIPT_PATH/routes/chnroute.txt`; do
-        do_ipset add shadowsocks $ip
+        ipset add shadowsocks $ip
     done
 fi
 
-do_iptables -t nat -A SHADOWSOCKS -p tcp -m set --match-set shadowsocks dst -j RETURN
+iptables -t nat -A SHADOWSOCKS -p tcp -m set --match-set shadowsocks dst -j RETURN
 
 # Redirect to ss-redir port
 LOCAL_PORT=`jq -r ".local_port" $CONFIG_PATH`
 
-do_iptables -t nat -A SHADOWSOCKS -p tcp -j REDIRECT --to-port $LOCAL_PORT
-do_iptables -t nat -A OUTPUT -p tcp -j SHADOWSOCKS
-# TODO: Support UDP as an extension in .ss_redir_options
+iptables -t nat -A SHADOWSOCKS -p tcp -j REDIRECT --to-port $LOCAL_PORT
+iptables -t nat -A OUTPUT -p tcp -j SHADOWSOCKS
 
 # Build ss-redir params
 SS_PARAMS="-c $CONFIG_PATH"
@@ -111,7 +102,35 @@ if [[ `jq -r ".ss_redir_options.ota" $CONFIG_PATH` == "true" ]]; then
     SS_PARAMS="-A $SS_PARAMS"
 fi
 
-do_ss_redir $SS_PARAMS
+if [[ `jq -r ".ss_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
+    SS_PARAMS="-u $SS_PARAMS"
+    iptables -t mangle -N SHADOWSOCKS
+    iptables -t mangle -N SHADOWSOCKS_MARK
+    
+    ip route add local default dev lo table 100
+    ip rule add fwmark 0x01/0x01 lookup 100
+    
+    # Im not sure
+    # iptables -t mangle -A SSUDP -d 127.0.0.0/24 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 192.168.0.0/16 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 10.42.0.0/16 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 0.0.0.0/8 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 10.0.0.0/8 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 172.16.0.0/12 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 224.0.0.0/4 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 240.0.0.0/4 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 169.254.0.0/16 -j RETURN    
+    # iptables -t mangle -A SSUDP -d 255.255.0.0/8 -j RETURN 
+    # ip_tables: TPROXY target: used from hooks OUTPUT, but only usable from PREROUTING
+    iptables -t mangle -A SHADOWSOCKS -p udp --dport 53 -j TPROXY --on-port $LOCAL_PORT --tproxy-mark 0x01/0x01
+    iptables -t mangle -A SHADOWSOCKS_MARK -p udp --dport 53 -j MARK --set-mark 0x01/0x01
+    # iptables -t mangle -A SSUDP -p udp  -j TPROXY --on-port $LOCAL_PORT  --tproxy-mark 0x01/0x01  # -d xx.xx.xx.xx/xx
+    iptables -t mangle -A PREROUTING -j SHADOWSOCKS
+    # iptables -t mangle -A OUTPUT -j SSUDP
+    iptables -t mangle -A OUTPUT -j SHADOWSOCKS_MARK
+fi
+
+ss-redir $SS_PARAMS
 
 # ss-redir has exited.
 clear_rules

@@ -6,7 +6,7 @@ clear_rules() {
     iptables -t nat -F SHADOWSOCKS
     iptables -t nat -X SHADOWSOCKS
     ipset destroy shadowsocks
-    if [[ `jq -r ".ss_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
+    if [[ `jq -r ".ssr_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
         echo "Clearing udp rules"
         ip route del local default dev lo table 100
         ip rule del fwmark 1 lookup 100
@@ -20,6 +20,7 @@ clear_rules() {
         iptables -t mangle -X SHADOWSOCKS_MARK
     fi
 }
+
 find_script_path() {
     SCRIPT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 }
@@ -35,9 +36,9 @@ fi
 CONFIG_PATH="$1"
 
 if [ "$CONFIG_PATH" == "" ]; then
-    echoerr "Usage: shadowsocks-auto-redir <path to config.json>"
+    echoerr "Usage: ssr-auto-redir <path to config.json>"
     exit 1
-elif [ "$CONFIG_PATH" == "/etc/shadowsocks-libev/clear.json" ]; then
+elif [ "$CONFIG_PATH" == "/opt/ssr-auto-redir/config/clear.json" ]; then
     clear_rules
     exit 0
 elif [ ! -f "$CONFIG_PATH" ]; then
@@ -56,11 +57,11 @@ else
     iptables -t nat -A SHADOWSOCKS -d $SERVER -j RETURN
 fi
 
-BYPASS_IPS=`jq -r ".ss_redir_options.bypass_ips" $CONFIG_PATH`
+BYPASS_IPS=`jq -r ".ssr_redir_options.bypass_ips" $CONFIG_PATH`
 
 if [[ "$BYPASS_IPS" != "null" ]]; then
     # Should only iterate when the item is not null
-    BYPASS_IPS=`jq -r ".ss_redir_options.bypass_ips[]" $CONFIG_PATH`
+    BYPASS_IPS=`jq -r ".ssr_redir_options.bypass_ips[]" $CONFIG_PATH`
     for ip in $BYPASS_IPS; do
         iptables -t nat -A SHADOWSOCKS -d $ip -j RETURN
     done
@@ -79,7 +80,7 @@ iptables -t nat -A SHADOWSOCKS -d 240.0.0.0/4 -j RETURN
 # Load bypass route set
 ipset -N shadowsocks hash:net maxelem 65536
 
-BYPASS_PRESET=`jq -r ".ss_redir_options.bypass_preset" $CONFIG_PATH`
+BYPASS_PRESET=`jq -r ".ssr_redir_options.bypass_preset" $CONFIG_PATH`
 
 if [[ "$BYPASS_PRESET" == "chnroute" ]]; then
     for ip in `cat $SCRIPT_PATH/routes/chnroute.txt`; do
@@ -98,11 +99,11 @@ iptables -t nat -A OUTPUT -p tcp -j SHADOWSOCKS
 # Build ss-redir params
 SS_PARAMS="-c $CONFIG_PATH"
 
-if [[ `jq -r ".ss_redir_options.ota" $CONFIG_PATH` == "true" ]]; then
+if [[ `jq -r ".ssr_redir_options.ota" $CONFIG_PATH` == "true" ]]; then
     SS_PARAMS="-A $SS_PARAMS"
 fi
 
-if [[ `jq -r ".ss_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
+if [[ `jq -r ".ssr_redir_options.udp_relay" $CONFIG_PATH` == "true" ]]; then
     SS_PARAMS="-u $SS_PARAMS"
     iptables -t mangle -N SHADOWSOCKS
     iptables -t mangle -N SHADOWSOCKS_MARK

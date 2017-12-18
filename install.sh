@@ -1,21 +1,19 @@
 #!/bin/bash
 link() {
-    ln -sf $PWD /opt/shadowsocks-auto-redir
-    ln -sf $PWD/config.json /etc/shadowsocks-libev/config.json
-    cp $PWD/systemd/shadowsocks-auto-redir@.service /etc/systemd/system/shadowsocks-auto-redir@.service
+    ln -sf $PWD /opt/ssr-auto-redir
+    cp $PWD/systemd/ssr-auto-redir@.service /etc/systemd/system/ssr-auto-redir@.service
     systemctl daemon-reload
 }
 
 unlink() {
-    rm -rf /opt/shadowsocks-auto-redir
-    rm -rf /etc/shadowsocks-libev/config.json
-    rm -rf /etc/systemd/system/shadowsocks-auto-redir@.service
+    rm -rf /opt/ssr-auto-redir
+    rm -rf /etc/systemd/system/ssr-auto-redir@.service
     systemctl daemon-reload
 }
 
 update() {
-    rm -rf /etc/systemd/system/shadowsocks-auto-redir@.service
-    cp $PWD/systemd/shadowsocks-auto-redir@.service /etc/systemd/system/shadowsocks-auto-redir@.service
+    rm -rf /etc/systemd/system/ssr-auto-redir@.service
+    cp $PWD/systemd/ssr-auto-redir@.service /etc/systemd/system/ssr-auto-redir@.service
     systemctl daemon-reload
 }
 pull(){
@@ -38,4 +36,6 @@ elif [[ "$1" == "update" ]]; then
     update
 elif [[ "$1" == "pull" ]]; then
     pull
+else
+    echo "Unknown option: $1, available options: link unlink update pull"
 fi

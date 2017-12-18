@@ -1,0 +1,13 @@
+[Unit]
+Description=Automatic script to start shadowsocksr-redir and configure routing table
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/ssr-auto-redir/ssr-auto-redir /opt/ssr-auto-redir/config/%i.json
+KillSignal=SIGINT
+CapabilityBoundingSet=~CAP_SYS_ADMIN
+
+[Install]
+WantedBy=multi-user.target

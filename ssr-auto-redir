@@ -22,18 +22,6 @@ clear_rules() {
     iptables -t nat -F SHADOWSOCKS
     iptables -t nat -X SHADOWSOCKS
     ipset destroy shadowsocks
-    #if [[ $(jq -r ".ssr_redir_options.udp_relay" "$CONFIG_PATH") == "true" ]]; then
-    ip route del local default dev lo table 100
-    ip rule del fwmark 1 lookup 100
-    iptables -t mangle -D  OUTPUT -j SHADOWSOCKS_MARK
-    iptables -t mangle -D PREROUTING -j SHADOWSOCKS
-    
-    iptables -t mangle -F SHADOWSOCKS
-    iptables -t mangle -X SHADOWSOCKS
-    
-    iptables -t mangle -F SHADOWSOCKS_MARK
-    iptables -t mangle -X SHADOWSOCKS_MARK
-    #fi
 }
 
 link() {
@@ -130,34 +118,6 @@ connect(){
     
     if [[ $(jq -r ".ssr_redir_options.ota" "$CONFIG_PATH") == "true" ]]; then
         SS_PARAMS="-A $SS_PARAMS"
-    fi
- 
-    if [[ $(jq -r ".ssr_redir_options.udp_relay" "$CONFIG_PATH") == "true" ]]; then
-        SS_PARAMS="-u $SS_PARAMS"
-        iptables -t mangle -N SHADOWSOCKS
-        iptables -t mangle -N SHADOWSOCKS_MARK
-        
-        ip route add local default dev lo table 100
-        ip rule add fwmark 0x01/0x01 lookup 100
-        
-        # Im not sure
-        # iptables -t mangle -A SSUDP -d 127.0.0.0/24 -j RETURN
-        # iptables -t mangle -A SSUDP -d 192.168.0.0/16 -j RETURN
-        # iptables -t mangle -A SSUDP -d 10.42.0.0/16 -j RETURN
-        # iptables -t mangle -A SSUDP -d 0.0.0.0/8 -j RETURN
-        # iptables -t mangle -A SSUDP -d 10.0.0.0/8 -j RETURN
-        # iptables -t mangle -A SSUDP -d 172.16.0.0/12 -j RETURN
-        # iptables -t mangle -A SSUDP -d 224.0.0.0/4 -j RETURN
-        # iptables -t mangle -A SSUDP -d 240.0.0.0/4 -j RETURN
-        # iptables -t mangle -A SSUDP -d 169.254.0.0/16 -j RETURN
-        # iptables -t mangle -A SSUDP -d 255.255.0.0/8 -j RETURN
-        # ip_tables: TPROXY target: used from hooks OUTPUT, but only usable from PREROUTING
-        iptables -t mangle -A SHADOWSOCKS -p udp --dport 53 -j TPROXY --on-port $LOCAL_PORT --tproxy-mark 0x01/0x01
-        iptables -t mangle -A SHADOWSOCKS_MARK -p udp --dport 53 -j MARK --set-mark 0x01/0x01
-        # iptables -t mangle -A SSUDP -p udp  -j TPROXY --on-port $LOCAL_PORT  --tproxy-mark 0x01/0x01  # -d xx.xx.xx.xx/xx
-        iptables -t mangle -A PREROUTING -j SHADOWSOCKS
-        # iptables -t mangle -A OUTPUT -j SSUDP
-        iptables -t mangle -A OUTPUT -j SHADOWSOCKS_MARK
     fi
     
     ssr-redir $SS_PARAMS

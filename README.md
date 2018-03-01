@@ -75,16 +75,3 @@ sudo systemctl enable ssr-auto-redir@example
 # disable service autostart
 sudo systemctl disable ssr-auto-redir@example
 ```
-
-
-
-
-
-
-### Enable udp forward
-This feature is still in TODO List
-<!-- ```json
-  "ssr_redir_options": {
-    "udp_relay": true
-  }
-``` -->

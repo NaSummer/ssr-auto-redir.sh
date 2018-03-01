@@ -62,8 +62,6 @@ connect(){
     
     # Bypass ips
     SERVER=$(jq -r ".server" "$CONFIG_PATH")
-
-    echo $SERVER
     
     if [[ $SERVER =~ "127."* ]]; then
         echo "Skipping local address $SERVER"

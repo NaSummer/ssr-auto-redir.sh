@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/ssr-auto-redir/ssr-auto-redir /opt/ssr-auto-redir/config/%i.json
+ExecStart=/opt/ssr-auto-redir/ssr-auto-redir connect %i
 KillSignal=SIGINT
 CapabilityBoundingSet=~CAP_SYS_ADMIN
 

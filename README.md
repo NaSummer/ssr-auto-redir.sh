@@ -1,6 +1,6 @@
 ssr-auto-rediur
 ---
-A fork of [PeterCxy/shadowsocks-auto-redir.sh](https://github.com/PeterCxy/shadowsocks-auto-redir.sh) and add shadowsocks-rss support.
+A fork of [PeterCxy/shadowsocks-auto-redir.sh](https://github.com/PeterCxy/shadowsocks-auto-redir.sh) with shadowsocksr support.
 
 
 ## Prerequisite
@@ -19,7 +19,7 @@ yaourt -S jq ipset shadowsocksr-libev-git
 
 ## Config
 ### local configuration
-Create a `local.json` in the root directory: 
+Create a `local.json` in the project root directory: 
 ```json
 {
   "local_port": 4411,

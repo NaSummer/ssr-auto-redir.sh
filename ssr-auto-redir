@@ -1,6 +1,10 @@
 #!/bin/bash
 echoerr() { echo "$@" 1>&2; }
 
+debug(){
+    # echo [DEBUG] "$@"
+    return
+}
 # check root
 if [ "$(id -u)" != "0" ]; then
     echoerr "This script MUST BE run as ROOT"
@@ -15,6 +19,14 @@ fi
 
 # cwd
 ROOT_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+LOCAL_PATH="$ROOT_PATH/local.json"
+
+if [ ! -f "$LOCAL_PATH" ]; then
+    echoerr "$LOCAL_PATH does not exist"
+    exit 1
+fi
+
 
 clear_rules() {
     echo "Clearing rules..."
@@ -44,14 +56,14 @@ update() {
 
 pull(){
     mv -f routes/chnroute.txt routes/chnroute.txt.bak
-    curl 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | grep ipv4 | grep CN | awk -F\| '{ printf("%s/%d\n", $4, 32-log($5)/log(2)) }' > routes/chnroute.txt
+    curl $(jq -r ".chnroute_url" $LOCAL_PATH) | grep ipv4 | grep CN | awk -F\| '{ printf("%s/%d\n", $4, 32-log($5)/log(2)) }' > routes/chnroute.txt
     systemctl daemon-reload
 }
 
 connect(){
-
+    
     CONFIG_PATH="$ROOT_PATH/config/$1.json"
-
+    
     if [ ! -f "$CONFIG_PATH" ]; then
         echoerr "$CONFIG_PATH does not exist"
         exit 1
@@ -68,11 +80,11 @@ connect(){
     else
         iptables -t nat -A SHADOWSOCKS -d "$SERVER" -j RETURN
     fi
-    BYPASS_IPS=$(jq -r ".ssr_redir_options.bypass_ips" "$CONFIG_PATH")
+    BYPASS_IPS=$(jq -r ".bypass_ips" "$LOCAL_PATH")
     
     if [[ "$BYPASS_IPS" != "null" ]]; then
         # Should only iterate when the item is not null
-        BYPASS_IPS=$(jq -r ".ssr_redir_options.bypass_ips[]" "$CONFIG_PATH")
+        BYPASS_IPS=$(jq -r ".bypass_ips[]" "$LOCAL_PATH")
         for ip in $BYPASS_IPS; do
             iptables -t nat -A SHADOWSOCKS -d "$ip" -j RETURN
         done
@@ -93,18 +105,18 @@ connect(){
     # Load bypass route set
     ipset -N shadowsocks hash:net maxelem 65536
     
-    BYPASS_PRESET=$(jq -r ".ssr_redir_options.bypass_preset" "$CONFIG_PATH")
+    BYPASS_PRESET=$(jq -r ".bypass_preset" "$LOCAL_PATH")
     
     if [[ "$BYPASS_PRESET" == "chnroute" ]]; then
         while IFS= read -r ip; do
-            ipset add shadowsocks "$ip"
+            ipset add shadowsocks "$ip"Q
         done < "$ROOT_PATH/routes/chnroute.txt"
     fi
-
+    
     iptables -t nat -A SHADOWSOCKS -p tcp -m set --match-set shadowsocks dst -j RETURN
-
+    
     # Redirect to ss-redir port
-    LOCAL_PORT=$(jq -r ".local_port" "$CONFIG_PATH")
+    LOCAL_PORT=$(jq -r ".local_port" "$LOCAL_PATH")
     
     iptables -t nat -A SHADOWSOCKS -p tcp -j REDIRECT --to-port $LOCAL_PORT
     
@@ -112,18 +124,84 @@ connect(){
     iptables -t nat -A OUTPUT -p tcp -j SHADOWSOCKS
     
     # Build ss-redir params
-    SS_PARAMS="-c $CONFIG_PATH"
+    PARAMS="-c $CONFIG_PATH -l $LOCAL_PORT"
     
-    if [[ $(jq -r ".ssr_redir_options.ota" "$CONFIG_PATH") == "true" ]]; then
-        SS_PARAMS="-A $SS_PARAMS"
+    if [[ $(jq -r ".ota" "$LOCAL_PATH") == "true" ]]; then
+        PARAMS="-A $PARAMS"
     fi
     
-    ssr-redir $SS_PARAMS
     
-    # ss-redir has exited.
+    ssr-redir $PARAMS
+    
+    # ssr-redir has exited.
     clear_rules
 }
 
+# https://github.com/Moodstocks/moodstocks-api-clients/blob/master/bash/base64url.sh
+base64URL() {
+    len=$((${#1} % 4))
+    if [ $len -eq 2 ]; then 
+        raw="$1"'=='
+    elif [ $len -eq 3 ]; then 
+        raw="$1"'='
+    else 
+        raw="$1" 
+    fi
+    echo "$raw" | tr '_-' '/+' | base64 -d
+}
+
+make_config(){
+    CONF='{}'
+    REMARK=''
+    base_vals=${1%%/?*}
+    keys=( server server_port protocol method obfs password )
+    for i in {1..6}; do
+     val=$(echo "$base_vals" | cut -d ':' -f$i)
+     [[ $i -eq 6 ]] && val=$(base64URL "$val")
+     [[ $i -eq 1 ]] && REMARK=$val
+     tpl='. + {"'${keys[$i-1]}'": $val}'
+     CONF=$(echo "$CONF" | jq --arg val "$val" "$tpl" ) 
+    done
+   
+    other_vals=${1##*/?}
+
+    debug $other_vals
+    if [[ $other_vals =~ 'group='([a-zA-Z0-9]*) ]];then
+        val=$(base64URL "${BASH_REMATCH[1]}")
+        debug group : $val
+        CONF=$(echo "$CONF" | jq --arg val  "$val" '. + {"group": $val}')
+    fi
+
+    if [[ $other_vals =~ 'protoparam='([a-zA-Z0-9]*) ]];then
+        val=$(base64URL "${BASH_REMATCH[1]}")
+        debug protocol_param : $val
+        CONF=$(echo "$CONF" | jq --arg val "$val" '. + {"protocol_param": $val}')
+    fi
+    
+    if [[ $other_vals =~ 'remarks='([a-zA-Z0-9]*) ]];then
+        val=$(base64URL "${BASH_REMATCH[1]}")
+        CONF=$(echo "$CONF" | jq --arg val "$val" '. + {"remarks": $val}')
+        REMARK=$val
+        debug remarks : $val
+    fi
+    
+    if [[ $other_vals =~ 'obfsparam='([a-zA-Z0-9]*) ]];then
+        val=$(base64URL "${BASH_REMATCH[1]}")
+        debug obfs_param $val
+        CONF=$(echo "$CONF" | jq --arg val "$val" '. + {"obfs_param": $val}')
+    fi
+    # trim the space of remark
+    echo $CONF > "config/${REMARK// /}.json"
+}
+
+subscribe(){
+    SUB_URL=$(jq -r ".sub_url" "$LOCAL_PATH")
+    rm -rf config/*
+    curl $SUB_URL | base64 -d | while IFS= read -r link ;do
+        ssr_info=$(base64URL "${link:6}")
+        make_config $ssr_info
+    done
+}
 
 help(){
     echo
@@ -134,9 +212,10 @@ help(){
     echo "link:   link this script into system service"
     echo "unlink: unlink this script from system service"
     echo "update: update the system service file"
+    echo "subscribe: update server configs from subscribe url"
     echo "pull:   pull the latest chnroute ips from web"
     echo "connect <config remark>: start proxy using the provided config file"
-    echo 
+    echo
     exit 0
 }
 
@@ -158,10 +237,13 @@ if [ "$COMMAND" == "clear" ]; then
     
     elif [ "$COMMAND" == "update" ]; then
     update
-
+    
     elif [ "$COMMAND" == "connect" ]; then
     connect "$CONFIG"
     
+    elif [ "$COMMAND" == "subscribe" ]; then
+    subscribe
+
     elif [ "$COMMAND" == "help" ]; then
     help
     

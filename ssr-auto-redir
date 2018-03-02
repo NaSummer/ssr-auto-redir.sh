@@ -63,12 +63,14 @@ update() {
 }
 
 pull() {
+    check_path "$LOCAL_PATH"
 	mv -f routes/chnroute.txt routes/chnroute.txt.bak
 	curl $(jq -r ".chnroute_url" "$LOCAL_PATH") | grep ipv4 | grep CN | awk -F\| '{ printf("%s/%d\n", $4, 32-log($5)/log(2)) }' >routes/chnroute.txt
 }
 
 connect() {
 	check_root
+    
     check_ssr
 
 	check_path "$LOCAL_PATH"
@@ -200,6 +202,8 @@ create_config() {
 }
 
 subscribe() {
+    check_path "$LOCAL_PATH"
+
 	SUB_URL=$(jq -r ".sub_url" "$LOCAL_PATH")
 	# rm -rf config/*
 	curl -L "$SUB_URL" | base64 -d | while IFS= read -r link; do

@@ -27,7 +27,7 @@ check_path() {
 }
 
 check_ssr() {
-	if ! type ssr-redir >/dev/null 2>&1; then
+	if ! type ss-redir >/dev/null 2>&1; then
 		echoerr "shadowsocksr-libev is required"
 	fi
 }
@@ -63,16 +63,14 @@ update() {
 }
 
 pull() {
-    check_path "$LOCAL_PATH"
+	check_path "$LOCAL_PATH"
 	mv -f routes/chnroute.txt routes/chnroute.txt.bak
 	curl $(jq -r ".chnroute_url" "$LOCAL_PATH") | grep ipv4 | grep CN | awk -F\| '{ printf("%s/%d\n", $4, 32-log($5)/log(2)) }' >routes/chnroute.txt
 }
 
 connect() {
 	check_root
-    
-    check_ssr
-
+	check_ssr
 	check_path "$LOCAL_PATH"
 
 	CONFIG_PATH="$ROOT_PATH/config/$1.json"
@@ -111,7 +109,7 @@ connect() {
 	iptables -t nat -A SHADOWSOCKS -d 240.0.0.0/4 -j RETURN
 
 	# Load bypass route set
-	ipset create shadowsocks hash:net maxelem 65536
+	ipset -N shadowsocks hash:net maxelem 65536
 
 	BYPASS_PRESET=$(jq -r ".bypass_preset" "$LOCAL_PATH")
 
@@ -138,7 +136,7 @@ connect() {
 		PARAMS="-A $PARAMS"
 	fi
 
-	ssr-redir $PARAMS
+	ss-redir -v $PARAMS
 
 	# ssr-redir has exited.
 	clear_rules
@@ -197,16 +195,16 @@ create_config() {
 	fi
 	# trim the space of remark
 	if [ -n "$REMARK" ]; then
-	    echo "$config" >"config/${REMARK// /}.json"
-    fi
+		echo "$config" >"config/${REMARK// /}.json"
+	fi
 }
 
 subscribe() {
-    check_path "$LOCAL_PATH"
+	check_path "$LOCAL_PATH"
 
 	SUB_URL=$(jq -r ".sub_url" "$LOCAL_PATH")
 	# rm -rf config/*
-	curl -L "$SUB_URL" | base64 -d | while IFS= read -r link; do
+	base64URL $(curl -L "$SUB_URL") | while IFS= read -r link; do
 		ssr_body=$(base64URL "${link:6}")
 		create_config "$ssr_body"
 	done
